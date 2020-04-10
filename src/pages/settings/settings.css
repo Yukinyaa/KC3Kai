@@ -13,6 +13,18 @@ body {
 	display:none;
 }
 
+.ui-tooltip {
+	max-width:500px;
+	padding:2px 5px 3px 6px;
+	border-width:1px !important;
+	border:1px solid #222;
+	box-shadow:0 0 5px 1px #888;
+	color:#575757;
+	background:#fff;
+	font-family:inherit;
+	font-size:12px;
+}
+
 /* ABOUT
 --------------------------*/
 .about {
@@ -62,17 +74,18 @@ body {
 	height:24px;
 	float:left;
 	font-size:20px;
-	/*font-weight:bold;*/
 	line-height:24px;
 	margin:0px 10px 0px 0px;
 	color:#0099FF;
 }
 .section a {
-	width:200px;
+	text-decoration:none;
+}
+.section a.more {
+	width:170px;
 	height:24px;
 	float:right;
 	margin:0px 10px 0px 0px;
-	text-decoration:none;
 	text-align:right;
 }
 .section .icon {
@@ -98,45 +111,69 @@ body {
 /* Settings Boxes */
 .settingBox {
 	width:750px;
-	/*height:40px;*/
-	/*background:#FFE7CE;*/
+	min-height:45px;
 	background:#f6f6f6;
 	border-radius:8px 20px 20px 8px;
 	margin:0px 0px 5px 20px;
 	padding:0 0 5px 0;
 	overflow:hidden;
-	position: relative;
+	position:relative;
+	display:table;
 }
 .settingBox .title {
-	width:200px;
+	width:210px;
 	height:40px;
-	line-height:40px;
-	float:left;
+	line-height:20px;
 	font-size:14px;
 	font-weight:bold;
-	margin:0px 0px 0px 15px;
+	padding-left:10px;
+	display:table-cell;
+	vertical-align:middle;
 }
 .settingBox .options {
-	width:450px;
-	/*height:40px;*/
+	width:440px;
 	float:left;
 	margin:0px 5px 0px 0px;
+	display:table-cell;
 }
 .settingBox .note {
-	width: 192px;
+	max-width:192px;
 	height:40px;
 	line-height:40px;
 	float:left;
-	text-align: right;
-	/*font-size:16px;*/
+	text-align:right;
 	font-weight:bold;
 	color:#009900;
 	display:none;
-	position: absolute;
-	right: 16px;
-	top: 2px;
+	position:absolute;
+	right:10px;
+	top:12px;
 	pointer-events:none;
 }
+.settingBox .resetButton {
+	max-width:85px;
+	height:18px;
+	line-height:17px;
+	float:right;
+	padding:0px 8px;
+	position:relative;
+	top:4px;
+	right:10px;
+	border-radius:7px;
+	font-size:11px;
+	color:#000;
+	background:#ffc;
+	border:1px solid #ccc;
+	overflow:hidden;
+	white-space:nowrap;
+	display:none;
+}
+.settingBox .resetButton:hover {
+	background:#7ad;
+	border:1px solid #369;
+	color:#fff;
+}
+
 /* Settings Options */
 .settingBox .options .checkbox {
 	width:20px;
@@ -163,7 +200,7 @@ body {
 	padding:0px 2px;
 }
 .settingBox .options .long_text {
-	width:440px;
+	width:430px;
 	height:22px;
 	line-height:22px;
 	font-size:12px;
@@ -196,6 +233,60 @@ body {
 	border:1px solid #369;
 	color:#fff;
 }
+
+.settingBox .options .json_text {
+	width:400px;
+	min-width:400px;
+	max-width:400px;
+	height:100px;
+	min-height:100px;
+	font-size:12px;
+	font-family:monospace;
+	margin:9px 5px 0px 0px;
+	background:#fcfcfc;
+	border:1px solid #ccc;
+}
+.settingBox .options .json_text:hover {
+	background:#ffc;
+}
+.settingBox .options .json_text:focus {
+	background:#fff;
+}
+
+.settingBox .options .huge_text {
+	width:430px;
+	min-width:440px;
+	max-width:440px;
+	height:100px;
+	min-height:100px;
+	font-size:12px;
+	font-family:monospace;
+	margin:9px 5px 0px 0px;
+	background:#fcfcfc;
+	border:1px solid #ccc;
+}
+.settingBox .options .huge_text:hover {
+	background:#ffc;
+}
+.settingBox .options .huge_text:focus {
+	background:#fff;
+}
+
+.settingBox .options .dropdown {
+	width:430px;
+	height:25px;
+	line-height:23px;
+	font-size:14px;
+	margin:9px 5px 0px 0px;
+	border-radius:7px;
+	background:#ffc;
+	border:1px solid #ccc;
+	padding:0px 3px;
+}
+.settingBox .options .dropdown option:disabled {
+	color:#f99;
+}
+
 .settingBox.dangerous {
 	color: red;
 	background:#f68383;

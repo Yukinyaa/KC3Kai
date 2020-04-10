@@ -1,15 +1,14 @@
 /* ShipManager.js
 KC3改 Ship Manager
 
-Managesship roster and does indexing for data access.
+Manages ship roster and does indexing for data access.
 Saves and loads list to and from localStorage
 */
 (function(){
 	"use strict";
 	
 	/* this variable will keep the kc3-specific variables */
-	var
-		defaults = (new KC3Ship()),
+	const defaults = (new KC3Ship()),
 		devVariables = {
 			capture: ['didFlee','pendingConsumption','lastSortie','repair','akashiMark'],
 			norepl : ['repair']
@@ -19,41 +18,51 @@ Saves and loads list to and from localStorage
 		list: {},
 		max: 100,
 		pendingShipNum: 0,
-
+		
 		// Get a specific ship by ID
 		get :function( rosterId ){
 			// console.log("getting ship", rosterId, this.list["x"+rosterId]);
 			return this.list["x"+rosterId] || (new KC3Ship());
 		},
 		
-		// Count number of ships
-		count :function(){
-			return Object.size(this.list) + this.pendingShipNum;
+		// Count number of ships satisfying some precondition.
+		// when precondition is not explicitly given, it counts all ships
+		// including pending ships.
+		// but pending ships are not counted when a precondition is given.
+		count: function( cond ){
+			if (typeof cond === "undefined") {
+				return Object.size(this.list) + this.pendingShipNum;
+			}
+			var n = 0;
+			var x;
+			for (var ind in this.list) {
+				x = this.list[ind];
+				if (cond.call(x, x))
+					n += 1;
+			}
+			return n;
 		},
 		
 		// Add or replace a ship on the list
 		add :function(data){
-			var
-				self     = this,
-				tempData = {},
-				cky      = "",
-				newData  = false,
-				cShip;
-			if(typeof data.api_id != "undefined"){
+			const self   = this,
+				tempData = {};
+			var cky, cShip, oShip, isNewShip;
+			if(typeof data.api_id !== "undefined") {
 				cky = "x"+data.api_id;
-			}else if(typeof data.rosterId != "undefined"){
+			} else if(typeof data.rosterId !== "undefined") {
 				cky = "x"+data.rosterId;
-			}else{
+			} else {
 				return false;
 			}
 			
-			newData = !self.list[cky];
+			oShip = self.list[cky];
+			isNewShip = !oShip;
 			
 			devVariables.capture.forEach(function(key){
-				var
-					val = (self.list[cky] || defaults)[key];
+				var val = (oShip || defaults)[key];
 				tempData[key] = (typeof val === 'object' &&
-					(val instanceof Array ? Array.apply(null,val) : $.extend({},val))
+					(val instanceof Array ? [].slice.apply(val) : $.extend({}, val))
 				) || val;
 			});
 			
@@ -65,42 +74,71 @@ Saves and loads list to and from localStorage
 			//this.list[cky].didFlee = didFlee;
 			
 			// prevent the fresh data always overwrites the current loaded state
-			if(!newData)
+			if(!isNewShip) {
 				devVariables.capture.forEach(function(key){
-					if(devVariables.norepl.indexOf(key)<0)
+					if(devVariables.norepl.indexOf(key) < 0)
 						cShip[key] = tempData[key];
 				});
+				
+				// enforce fresh sortie0 placeholder
+				(function() {
+					var szs = 'sortie0',
+						ls  = cShip.lastSortie,
+						cnt = 0,
+						szi;
+					for(szi = 0; szi < ls.length; szi++)
+						cnt += ls[szi] == szs;
+					while(cnt) {
+						for(szi = 0; ls[szi] != szs; szi++) {}
+						ls.splice(szi,1);
+						cnt--;
+					}
+					ls.push(szs);
+				}).call(this);
+			} else {
+				// check ship master in lock_prep before lock request it
+				ConfigManager.loadIfNecessary();
+				if(ConfigManager.lock_prep[0] == cShip.rosterId) {
+					ConfigManager.lock_prep.shift();
+					if(!cShip.lock)
+						ConfigManager.lock_list.push(cShip.rosterId);
+					
+					ConfigManager.save();
+				}
+			}
 			
 			// Check previous repair state
 			// If there's a change detected (without applying applyRepair proc)
 			// It'll be treated as akashi effect
+			
+			cShip.akashiMark &= !!cShip.onFleet();
 			if(tempData.repair[0] > cShip.repair[0] && cShip.akashiMark) {
 				/* Disabling this --
 					the problem is, pending consumption variable stacks up for expedition, */
 				// Calculate Difference
-				var
-					sp = cShip,
-					pc = sp.pendingConsumption,
-					rs = Array.apply(null,{length:8}).map(function(){return 0;}),
-					df = tempData.repair.map(function(x,i){return x - sp.repair[i];});
+				var sp  = cShip,
+					pc  = sp.pendingConsumption,
+					rs  = Array.apply(null,{length:8}).map(function(){return 0;}),
+					df  = tempData.repair.map(function(x,i){return x - sp.repair[i];}),
+					hpd = sp.hp[0] - (oShip || defaults).hp[0];
+				
 				rs[0] = -df[1];
 				rs[2] = -df[2];
 				// Store Difference to Database
 				KC3Database.Naverall({
-					hour: Math.hrdInt('floor', Date.now()/3.6 ,6,1),
+					hour: Date.toUTChours(),
 					type: 'akashi' + sp.masterId,
 					data: rs
 				});
+				console.log("Akashi repaired", sp.rosterId, sp.name(), hpd, df);
 				// Reduce Consumption Counter
 				// df (delta)      = [0,5,20]
 				df.shift(); df.push(0);
-				console.info("Akashi repaired",cShip.name(),cShip.rosterId,df);
 				Object.keys(pc).reverse().forEach(function(d){
 					// if the difference is not all-zero, keep going
 					if(df.every(function(x){return !x;}))
 						return;
-					var
-						rp = pc[d][1],
+					var rp = pc[d][1],
 						dt = rp.map(function(x,i){return Math.max(x,-df[i]);});
 					// if the delta is not all-zero, keep going
 					if(dt.every(function(x){return !x;}))
@@ -116,57 +154,59 @@ Saves and loads list to and from localStorage
 			// if there's still pending exped condition on queue
 			// don't remove async wait false, after that, remove port load wait
 			if(!cShip.pendingConsumption.costnull) {
-				cShip.getDefer()[1].resolve(null); // removes async wait
+				// removes async wait
+				cShip.getDefer()[1].resolve(null);
 			}
-			cShip.getDefer()[2].resolve(cShip.fuel,cShip.bull,cShip.slots.reduce(function(x,y){return x+y;})); // mark resolve wait for port
-
+			// mark resolve wait for port
+			cShip.getDefer()[2].resolve(cShip.fuel, cShip.bull, cShip.slots.reduce(function(x,y){return x+y;}));
+			
+			// update picture book base form info
+			if(PictureBook) {
+				PictureBook.updateBaseShip(cShip.masterId);
+			}
 		},
 		
 		// Mass set multiple ships
 		// [repl] -> replace flag (replace whole list, replacing clear functionality)
-		set :function(data,repl){
-			var ctr,cky,rem,kid,slf;
-			slf = this;
-			rem = Object.keys(this.list);
+		set :function(data, repl){
+			const self = this;
+			var rem = Object.keys(this.list);
 			// console.log.apply(console,["Current list"].concat(rem.map(function(x){return x.slice(1);})));
-			for(ctr in data){
+			for(const ctr in data){
 				if(!!data[ctr]){
-					cky = 'x' + data[ctr].api_id;
-					kid = rem.indexOf(cky);
+					var cky = 'x' + data[ctr].api_id;
+					var kid = rem.indexOf(cky);
 					this.add(data[ctr]);
-					if(kid>=0)
-						rem.splice(kid,1);
+					if(kid >= 0)
+						rem.splice(kid, 1);
 				}
 			}
-			if(!repl)
-				rem.splice(0);
+			if(!repl) rem.splice(0);
 			// console.log.apply(console,["Removed ship"].concat(rem.map(function(x){return x.slice(1);})));
 			rem.forEach(function(rosterId){
-				slf.remove(parseInt(rosterId.slice(1)));
+				self.remove(parseInt(rosterId.slice(1)));
 			});
 			this.save();
 		},
 		
-		// Remove ship from the list, scrapped, mod-fodded, or sunk
-		remove :function( rosterId ){
-			console.log("removing ship", rosterId);
+		// Remove ship from the list, scrapped, mod-fodder, or sunk
+		remove :function( rosterId, keepEquip = false ){
+			console.log("Removing ship", rosterId);
 			var thisShip = this.list["x"+rosterId];
-			if(thisShip != "undefined"){
+			if(typeof thisShip != "undefined"){
 				// initializing for fleet sanitizing of zombie ships
-				var
-					flatShips  = PlayerManager.fleets
-						.map(function(x){ return x.ships; })
-						.reduce(function(x,y){ return x.concat(y); }),
-					shipTargetOnFleet = flatShips.indexOf(Number(rosterId)), // check from which fleet
-					shipTargetFleetID = Math.floor(shipTargetOnFleet/6);
+				var shipTargetFleetID = this.locateOnFleet(parseInt(rosterId, 10));
 				// check whether the designated ship is on fleet or not
-				if(shipTargetOnFleet >= 0){
+				if(shipTargetFleetID >= 0){
 					PlayerManager.fleets[shipTargetFleetID].discard(rosterId);
 				}
-				// remove any equipments from her
-				for(var gctr in thisShip.items){
-					if(thisShip.items[gctr] > -1){
-						KC3GearManager.remove( thisShip.items[gctr] );
+				// remove any equipments from her by default
+				if(!keepEquip){
+					var items = thisShip.equipment(true);
+					for(var gctr in items){
+						if(items[gctr].itemId > 0){
+							KC3GearManager.remove( items[gctr].itemId );
+						}
 					}
 				}
 				
@@ -176,9 +216,35 @@ Saves and loads list to and from localStorage
 			}
 		},
 		
-		// Show JSON string of the list for debugging purposes
-		json: function(){
-			console.log(JSON.stringify(this.list));
+		// Look for ships by specified conditions
+		find :function( cond ){
+			var result = [];
+			var x;
+			for(var i in this.list) {
+				x = this.list[i];
+				if(cond.call(x, x)) {
+					result.push(x);
+				}
+			}
+			return result;
+		},
+		
+		// Locate which fleet the ship is in, return -1 if not in any fleet
+		// similar with Ship.onFleet, but return 0-based index not 1-based sequence
+		locateOnFleet: function( rosterId ){
+			var fleetId = -1;
+			PlayerManager.fleets.find((fleet, index) => {
+				if(fleet.ships.find(rid => rid == rosterId)){
+					fleetId = index;
+					return true;
+				}
+			});
+			return fleetId;
+		},
+		
+		masterExists: function( masterId, matchBaseForm = true ){
+			var idToFind = matchBaseForm ? RemodelDb.originOf(masterId) || masterId : masterId;
+			return this.find(ship => idToFind === (matchBaseForm ? RemodelDb.originOf(ship.masterId) : ship.masterId)).length > 0;
 		},
 		
 		// Save ship list onto local storage
@@ -186,9 +252,13 @@ Saves and loads list to and from localStorage
 			this.list = {};
 		},
 		
+		encoded: function() {
+			return JSON.stringify(this.list);
+		},
+		
 		// Save ship list onto local storage
 		save: function(){
-			localStorage.ships = JSON.stringify(this.list);
+			localStorage.ships = this.encoded();
 		},
 		
 		// Load from storage and add each one to manager list

@@ -8,60 +8,99 @@
 		
 		exped_filters: [],
 		fleet_filters: [2,3,4],
-		useItemMap: {
-			1:"bucket",
-			2:"ibuild",
-			3:"devmat",
-			4:"box1",
-			5:"box2",
-			6:"box3",
-		},
-			
+		
 		/* INIT
 		Prepares all data needed
 		---------------------------------*/
 		init :function(){
-			
+			this.locale = KC3Translation.getLocale();
+			this.itemsPerPage = 20;
 		},
 		
 		/* EXECUTE
 		Places data onto the interface
 		---------------------------------*/
 		execute :function(){
-			var self = this;
+			const self = this;
 			
+			// Build more details from expedition master data
+			const buildExpedTooltip = (m) => (
+				["[{0}] ".format(m.api_id) + m.api_name,
+					m.api_details,
+					"Difficulty: {0}".format(m.api_difficulty),
+					"Reset type: {0}".format(m.api_reset_type),
+					"Damage type: {0}".format(m.api_damage_type),
+					"Cost fuel: {0}%, ammo: {1}%".format(m.api_use_fuel * 100, m.api_use_bull * 100),
+					"Levels of successful rewards:\n"
+						+ "\tfuel: {0}, ammo: {1}, steel: {2}, bauxite: {3}".format(m.api_win_mat_level)
+						+ (m.api_win_item1[0] > 0 ?
+							["\n\t", PlayerManager.getConsumableById(m.api_win_item1[0], true), ": ", m.api_win_item1[1]].join("") : "")
+						+ (m.api_win_item2[0] > 0 ?
+							[", ", PlayerManager.getConsumableById(m.api_win_item2[0], true), ": ", m.api_win_item2[1]].join("") : ""),
+					String(m.api_deck_num) + " ships fleet: "
+						+ m.api_sample_fleet.filter(t => !!t).map(t => KC3Meta.stype(t)).join(", ")
+				].join("\n")
+			);
 			// Add all expedition numbers on the filter list
-			var KE = PS["KanColle.Expedition"];
-			$('.tab_expedpast .expedNumbers').html("");
-			KE.allExpeditions.forEach( function(curVal, ind) {
-				var row = $('.tab_expedpast .factory .expedNum').clone();
-				$(".expedCheck input", row).attr("value", curVal.id.toString());
-				$(".expedText", row).text( curVal.id.toString() );
-				$(".expedTime", row).text( (curVal.cost.time*60).toString().toHHMMSS().substring(0,5) );
-				
-				self.exped_filters.push(curVal.id);
-				
-				var boxNum = Math.ceil((ind+1)/8);
-				$(".tab_expedpast .expedNumBox_"+boxNum).append( row );
-			});
+			self.exped_filters = [];
+			$('.tab_expedpast .expedNumbers').empty();
+			if(KC3Master.available) {
+				$.each(KC3Master.all_missions(), function(ind, curVal) {
+					// Event expeditions have the event world (eg, 38, 39, ...)
+					if(curVal.api_maparea_id >= 10) return;
+					var row = $('.tab_expedpast .factory .expedNum').clone();
+					$(".expedCheck input", row).attr("value", curVal.api_id);
+					$(".expedCheck input", row).attr("world", curVal.api_maparea_id);
+					$(".expedText .disp", row).text(curVal.api_disp_no);
+					// Support fleet expeditions (33, 34) cannot be cancelled
+					$(".expedText .flag", row).text(!curVal.api_return_flag ? "*" : "");
+					$(".expedTime", row).text(
+						(curVal.api_time * 60).toString().toHHMMSS().substring(0,5)
+					);
+					$(".expedText", row).toggleClass("monthly", curVal.api_reset_type == 1);
+					$(".expedTime", row).toggleClass("combat", curVal.api_damage_type > 0);
+					$(".expedText", row).attr("title", buildExpedTooltip(curVal)).lazyInitTooltip();
+					
+					self.exped_filters.push(curVal.api_id);
+					
+					$(".tab_expedpast .expedNumBox_"+curVal.api_maparea_id).append( row );
+				});
+			} else {
+				// In case missing raw data
+				const KE = PS["KanColle.Expedition"];
+				KE.allExpeditions.forEach( function(curVal, ind) {
+					var row = $('.tab_expedpast .factory .expedNum').clone();
+					$(".expedCheck input", row).attr("value", curVal.id);
+					$(".expedCheck input", row).attr("world", curVal.world);
+					$(".expedText .disp", row).text(curVal.name);
+					$(".expedTime", row).text(
+						(curVal.cost.time*60).toString().toHHMMSS().substring(0,5)
+					);
+					
+					self.exped_filters.push(curVal.id);
+					
+					$(".tab_expedpast .expedNumBox_"+curVal.world).append( row );
+				});
+			}
 			
 			// Add world toggle
 			$(".tab_expedpast .expedNumBox")
-				.filter(function(i,x){return $(x).hasClass("expedNumBox_"+(i+1));})
-				.each(function(i,x){
-					var
-						row = $('.tab_expedpast .factory .expedNum').clone().addClass("expedWhole").removeClass("expedNum"),
-						val = true;
-					$("input",".expedNumBox_"+(i+1)).each(function(id,elm){
-						val&= $(elm).prop("checked");
+				.filter(function(i,x) { return !!$(x).data("world"); })
+				.each(function(i,x) {
+					const row = $('.tab_expedpast .factory .expedNum').clone()
+						.addClass("expedWhole").removeClass("expedNum");
+					const world = $(x).data("world");
+					let val = true;
+					$("input",".expedNumBox_"+world).each(function(id,elm){
+						val &= $(elm).prop("checked");
 					});
 					$(row)
 						.find(".expedCheck input")
-							.attr("value", i+1)
+							.attr("value", world)
 							.prop("checked", val)
 						.end()
 						.find(".expedText")
-							.text( "World " + (i+1) )
+							.text( "World " + world).attr("title", KC3Meta.worldToDesc(world))
 						.end()
 						.find(".expedTime")
 							.remove()
@@ -72,25 +111,25 @@
 			
 			// Expedition Number Filter
 			$(".tab_expedpast .expedNumBox").on("click", '.expedNum input', function(){
-				var
+				const
 					filterExpeds = $('.tab_expedpast .expedNumBox .expedNum input:checked'),
-					worldNum     = Math.qckInt("ceil",($(this).attr("value")) / 8),
-					context      = ".tab_expedpast .expedNumBox_"+worldNum,
-					parentCheck  = true;
+					worldNum     = $(this).attr("world"),
+					context      = ".tab_expedpast .expedNumBox_"+worldNum;
+				let parentCheck  = true;
 				self.exped_filters = [];
 				$(".expedNum   input",context).each(function(i,x){ parentCheck &= $(x).prop("checked"); });
 				$(".expedWhole input",context).prop("checked",parentCheck);
 				filterExpeds.each( function() {
 					self.exped_filters.push( parseInt( $(this).attr("value"),10) );
 				});
-				self.tabSelf.definition.refreshList();
+				self.refreshList();
 			}).on("click", ".expedWhole input", function() {
-				var
+				const
 					worldNum = $(this).val(),
 					state    = $(this).prop("checked"),
 					expeds   = $(".tab_expedpast .expedNumBox_"+worldNum+" .expedNum input");
 				expeds.each(function(i,x){
-					var
+					const
 						elmState = $(x).prop("checked"),
 						expedNum = parseInt($(x).val());
 					if(elmState ^ state) { // check different state
@@ -103,82 +142,113 @@
 					}
 				});
 				self.exped_filters.sort(function(a,b){return a-b;});
-				self.tabSelf.definition.refreshList();
+				self.refreshList();
 			});
 			
 			// Fleet Number Filter
 			$(".tab_expedpast .expedNumBox").on("click", '.fleetRadio input', function(){
-				var filterFleets = $('.tab_expedpast .expedNumBox .fleetRadio input:checked');
+				const filterFleets = $('.tab_expedpast .expedNumBox .fleetRadio input:checked');
 				self.fleet_filters = [];
 				filterFleets.each( function() {
 					self.fleet_filters.push( parseInt( $(this).attr("value"),10) );
 				});
-				self.tabSelf.definition.refreshList();
+				self.refreshList();
+			});
+			$(".tab_expedpast .expedNumBox").on("change", '.fleetSparkles', function(){
+				self.refreshList();
 			});
 			
 			// Show initial list
-			self.tabSelf.definition.refreshList();
+			self.refreshList();
 		},
 		
 		refreshList :function(){
-			var self = this;
+			const self = this;
 			
-			// Get pagination
+			$(".tab_expedpast .exped_count").hide();
+			$(".tab_expedpast .exped_list").empty();
 			$(".tab_expedpast .exped_pages").html('<ul class="pagination pagination-sm"></ul>');
-			KC3Database.count_expeds(this.exped_filters, this.fleet_filters, function(NumRecords){
-				// console.log("NumRecords", NumRecords);
-				var itemsPerPage = 20;
-				var numPages = Math.ceil(NumRecords/itemsPerPage);
+			const typeSelect = parseInt($(".tab_expedpast .typeSelect select").val(), 10);
+			const target = parseInt($(".tab_expedpast .fleetDropdown input").val(), 10);
+			const sparkled = function(sparkles) {
+				switch(typeSelect) {
+					case 0:
+						return sparkles > target;
+					case 1:
+						return sparkles >= target;
+					case 2:
+						return sparkles == target;
+				}
+			};
+			// Get pagination
+			KC3Database.count_expeds(this.exped_filters, this.fleet_filters, sparkled,
+				function(numRecords, gs, ns, itemCount){
+				const numPages = Math.ceil(numRecords / self.itemsPerPage);
+				//console.debug("count_expeds", numRecords);
 				
 				if(numPages > 0){
 					$('.tab_expedpast .pagination').twbsPagination({
 						totalPages: numPages,
 						visiblePages: 9,
 						onPageClick: function (event, page) {
-							self.tabSelf.definition.showPage( page );
+							self.showPage( page );
 						}
 					});
-					$('.tab_expedpast .pagination').show("");
+					$('.tab_expedpast .exped_count').text(
+						"Total pages: {0}, Total expeditions: {1}, Great Success /Total Success: {2} /{3} ({4}%)"
+							.format(KC3Meta.formatNumber(numPages), KC3Meta.formatNumber(numRecords),
+								KC3Meta.formatNumber(gs), KC3Meta.formatNumber(ns),
+								((gs / ns * 100) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }))
+					).show();
+					$('.tab_expedpast .pagination').show();
 				}else{
 					$('.tab_expedpast .pagination').hide();
 				}
-				
-				self.tabSelf.definition.showPage(1);
 			});
 		},
 		
 		showPage :function(pageNumber){
-			var self = this;
-			// console.log("page", pageNumber);
+			const self = this;
 			
-			KC3Database.get_expeds(pageNumber, this.exped_filters, this.fleet_filters, function(response){
-				// console.log("get_expeds", response);
-				$(".tab_expedpast .exped_list").html("");
+			const typeSelect = parseInt($(".tab_expedpast .typeSelect select").val(), 10);
+			const target = parseInt($(".tab_expedpast .fleetDropdown input").val(), 10);
+			const sparkled = function(sparkles) {
+				switch(typeSelect) {
+					case 0:
+						return sparkles > target;
+					case 1:
+						return sparkles >= target;
+					case 2:
+						return sparkles == target;
+				}
+			};
+			KC3Database.get_expeds(pageNumber, this.itemsPerPage, this.exped_filters, this.fleet_filters, sparkled,
+				function(response){
+				//console.debug("get_expeds", response, self.exped_filters, self.fleet_filters);
+				$(".tab_expedpast .exped_list").empty();
 				
-				var ctr, sctr, rctr, drumCount, rscAmt,
-					ThisExped, ExpedBox, ExpedDate,
-					ThisShip, ShipBox;
+				for(const ctr in response){
+					const ThisExped = response[ctr];
+					//console.debug(ThisExped);
 					
-				for(ctr in response){
-					ThisExped = response[ctr];
-					//console.log(ThisExped);
-					
-					ExpedBox = $(".tab_expedpast .factory .exped_item").clone().appendTo(".tab_expedpast .exped_list");
+					const ExpedBox = $(".tab_expedpast .factory .exped_item").clone()
+						.appendTo(".tab_expedpast .exped_list");
 					
 					// Expedition date
-					ExpedDate = new Date(ThisExped.time*1000);
-					$(".exped_date", ExpedBox).text( ExpedDate.format("mmm dd") );
-					$(".exped_time", ExpedBox).text( ExpedDate.format("hh:MM tt") );
+					const expedDate = new Date(ThisExped.time * 1000);
+					$(".exped_date", ExpedBox).text( expedDate.format("mmm dd", false, self.locale) );
+					$(".exped_time", ExpedBox).text( expedDate.format("hh:MM tt") );
+					$(".exped_info", ExpedBox).attr("title", expedDate.format("yyyy-mm-dd HH:MM:ss"));
 					
 					// Number and HQ exp
-					$(".exped_number", ExpedBox).text( ThisExped.mission );
+					$(".exped_number", ExpedBox).text( KC3Master.missionDispNo(ThisExped.mission) );
 					$(".exped_exp", ExpedBox).text( ThisExped.admiralXP );
 
-					drumCount = 0;
-					// Ship List
-					for(sctr in ThisExped.fleet){
-						ThisShip = ThisExped.fleet[sctr];
-						ShipBox = $(".tab_expedpast .factory .exped_ship").clone();
+					let drumCount = 0;
+					// Ship List. WARN: `.fleet` might be `{}` for old bad data
+					for(const sctr in ThisExped.fleet){
+						const ThisShip = ThisExped.fleet[sctr];
+						const ShipBox = $(".tab_expedpast .factory .exped_ship").clone();
 						$(".exped_ship_img img", ShipBox).attr("src", KC3Meta.shipIcon(ThisShip.mst_id) );
 						$(".exped_ship_exp", ShipBox).text( ThisExped.shipXP[sctr] );
 						if(ThisShip.morale > 49){ $(".exped_ship_img", ShipBox).addClass("sparkled"); }
@@ -193,9 +263,9 @@
 					$(".exped_drums", ExpedBox).text( drumCount );
 
 					// Resource gains
-					for(rctr in ThisExped.data.api_get_material){
+					for(let rctr in ThisExped.data.api_get_material){
 						rctr = parseInt(rctr, 10);
-						rscAmt = ThisExped.data.api_get_material[rctr];
+						const rscAmt = ThisExped.data.api_get_material[rctr];
 						if(rscAmt > 0){
 							$(".exped_rsc"+(rctr+1), ExpedBox).text( rscAmt );
 						}else{
@@ -203,34 +273,45 @@
 							$(".exped_rsc"+(rctr+1), ExpedBox).addClass("empty");
 						}
 					}
-					
+
 					// Result image
 					$(".exped_result img", ExpedBox).attr("src",
 						"../../../../assets/img/client/exped_"+
 						(["fail","fail","success","gs"][ThisExped.data.api_clear_result+1])
 						+".png");
-					
-					// Reward item 1
-					if(ThisExped.data.api_useitem_flag[0] > 0){
-						$(".exped_item1 img", ExpedBox).attr("src",
-							"../../assets/img/client/"+
-							self.tabSelf.definition.useItemMap[
-								ThisExped.data.api_useitem_flag[0]
-							]+".png");
-					}else{
-						$("exped_item1 img", ExpedBox).hide();
+
+					// see private function used by `main.js#ExpeditionResultModel.prototype._createItemModel`
+					const useItemMap = {
+						1:"bucket", // flag value
+						2:"ibuild", // flag value
+						3:"devmat", // flag value
+						4:"screws", // master id
+						5:"coin",   // flag value, its master id is 44
+						10:"box1",  // master id
+						11:"box2",  // master id
+						12:"box3",  // master id
+					};
+					// Reward item1 and item2
+					for(const fctr in ThisExped.data.api_useitem_flag) {
+						const flag = ThisExped.data.api_useitem_flag[fctr];
+						const itemIndex = parseInt(fctr, 10) + 1;
+						const itemDiv = $(".exped_item" + itemIndex, ExpedBox);
+						if(flag > 0) {
+							const getItem = ThisExped.data["api_get_item" + itemIndex];
+							const useitemId = flag === 4 ? getItem.api_useitem_id : flag;
+							const useitemCount = getItem.api_useitem_count;
+							$("img", itemDiv).attr("src",
+								`/assets/img/client/${useItemMap[useitemId]}.png`
+							).attr("title",
+								KC3Meta.useItemName(useitemId === 5 ? 44 : useitemId)
+							);
+							$("span", itemDiv).text(useitemCount > 1 ? useitemCount : "");
+						} else {
+							$("img", itemDiv).hide();
+							$("span", itemDiv).hide();
+						}
 					}
-					
-					// Reward item 2
-					if(ThisExped.data.api_useitem_flag[1] > 0){
-						$(".exped_item2 img", ExpedBox).attr("src",
-							"../../assets/img/client/"+
-							self.tabSelf.definition.useItemMap[
-								ThisExped.data.api_useitem_flag[1]
-							]+".png");
-					}else{
-						$("exped_item2 img", ExpedBox).hide();
-					}
+
 				}
 			});
 		}

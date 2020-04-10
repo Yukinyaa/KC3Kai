@@ -1,5 +1,4 @@
 .tab_crafts {
-	
 }
 .tab_crafts .build_list {
 	width:680px;
@@ -15,12 +14,11 @@
 	height:24px;
 	line-height:24px;
 	margin:0px 0px 2px 0px;
-	background:#eee;
+	white-space:nowrap;
 }
 .tab_crafts .build_item .build_field {
 	float:left;
 	height:24px;
-	/*background:#ccf;*/
 }
 .tab_crafts .build_item .build_id {
 	width:50px;
@@ -35,33 +33,22 @@
 	width:20px;
 	height:20px;
 	margin:2px;
+	object-fit: cover;
+	image-rendering: auto;
 }
 .tab_crafts .build_item .build_flag {
-	width:110px;
-	overflow:hidden;
+	width:100px;
 	margin:0px 5px 0px 0px;
-	font-size:12px;
-	white-space: nowrap;
+	font-size:14px;
 	overflow:hidden;
+	text-overflow:ellipsis;
 }
 .tab_crafts .build_item .build_rsc {
 	width:40px;
 	margin:0px 5px 0px 0px;
 	text-align:center;
+	font-size:14px;
 	font-weight:bold;
-	font-size:12px;
-}
-.tab_crafts .build_item .build_rsc1 {
-	background:#C1FFC1;
-}
-.tab_crafts .build_item .build_rsc2 {
-	background:#DFD7B3;
-}
-.tab_crafts .build_item .build_rsc3 {
-	background:#ccc;
-}
-.tab_crafts .build_item .build_rsc4 {
-	background:#FFDCA8;
 }
 .tab_crafts .build_item .build_ricon {
 	width:24px;
@@ -73,28 +60,66 @@
 	margin:2px;
 }
 .tab_crafts .build_item .build_result {
-	width:140px;
-	overflow:hidden;
+	width:130px;
 	margin:0px 5px 0px 0px;
 	font-size:12px;
-	white-space: nowrap;
 	overflow:hidden;
+	text-overflow:ellipsis;
 }
 .tab_crafts .build_item .build_time {
-	width:130px;
+	width:150px;
 	font-size:11px;
 	color:#999;
+	overflow:hidden;
+}
+
+/* FILTERS
+--------------------------------*/
+.tab_crafts .filters {
+	height:60px;
+}
+.tab_crafts .filters .build_name {
+	float:left;
+	height:25px;
+	margin-right:10px;
+	margin-bottom:5px;
+}
+.tab_crafts .filters .build_icon {
+	float:left;
+	margin:5px 2px 0px 0px;
+	height:16px;
+}
+.tab_crafts .filters .build_rsc {
+	float:left;
+	width:45px;
+	height:25px;
+	margin-right:10px;
+	margin-bottom:5px;
+	padding:1px;
+	border-width:1px;
+}
+.tab_crafts .filters .secretary_ship {
+	width:120px;
+}
+.tab_crafts .filters .build_result {
+	width:140px;
+}
+.tab_crafts .filters .reset_all {
+	height:25px;
+	padding:2px 5px;
+}
+.tab_crafts .page_items {
+	font-size:12px;
+}
+.tab_crafts .item_per_page {
+	margin-right:4px;
 }
 
 /* PAGINATION
 --------------------------------*/
 .tab_crafts .build_pages {
-	width:700px;
-	margin:0px 0px 10px 0px;
-	background:#f0f5ff;
-	padding:5px 10px 0px;
-	border-bottom:1px solid #369;
+	height:50px;
 }
 .tab_crafts .build_pages .pagination {
-	margin:0px;
+	margin:5px 0px 0px 0px;
 }

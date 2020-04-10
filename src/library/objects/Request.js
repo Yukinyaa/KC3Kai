@@ -7,45 +7,92 @@ Executes processing and relies on KC3Network for the triggers
 (function(){
 	"use strict";
 	
-	window.KC3Request = function( data ){
-		this.url = data.request.url;
-		this.headers = data.response.headers;
-		this.statusCode = data.response.status;
-		this.params = data.request.postData.params;
-		
-		var KcsApiIndex = this.url.indexOf("/kcsapi/");
-		this.call = this.url.substring( KcsApiIndex+8 );
-		
+	window.KC3Request = function(har){
+		// HAR Specification (v1.2) see: http://www.softwareishard.com/blog/har-12-spec/
+		// Deep clone for avoiding direct references to HAR object members
+		if(har){
+			this.url = String(har.request.url);
+			this.headers = $.extend(true, [], har.response.headers);
+			this.statusCode = har.response.status;
+			this.params = $.extend(true, [], (har.request.postData || {}).params);
+			this.call = this.url.substring(this.url.indexOf("/kcsapi/") + 8);
+			this.parsePostDataTextIfNecessary(har.request);
+		}
 		this.gameStatus = 0;
 		this.response = {};
 	};
 	
+	/**
+	 * Parse the postData text in the request body instead, for these cases browser cannot do it for us:
+	 *   * Redirected request after a 307 response on Chrome m72 stable?
+	 */
+	KC3Request.prototype.parsePostDataTextIfNecessary = function(request){
+		// Considered as necessary since KCSAPI is posting `application/x-www-form-urlencoded` data,
+		// as long as params is undefined and text exists, ignoring the original mine-type.
+		if(request.postData
+			&& !request.postData.params && request.postData.text
+			&& !this.params.length) {
+			// Simulate the parsing behavior browser does for HAR `postData.params`
+			const decodeFormUrlencoded = (text) => {
+				const result = [];
+				const keyValuePairs = text.split(/&+/);
+				for (const keyValuePair of keyValuePairs) {
+					const keyValue = keyValuePair.split(/=/);
+					// Not support yet: (Array/Dictionary) key, (fileName, contentType), comment
+					// And no `decodeURI` applied, seems browser doesnot do it in HAR either
+					const name = keyValue[0], value = keyValue[1];
+					result.push({
+						name, value
+					});
+				}
+				return result;
+			};
+			this.params = decodeFormUrlencoded(request.postData.text);
+			console.warn("Request post data reparsed:", this.params, $.extend(true, {}, request.postData));
+		}
+	};
 	
 	/* VALIDATE HEADERS
 	
 	------------------------------------------*/
 	KC3Request.prototype.validateHeaders = function(){
 		// If response header statusCode is not 200, means non-in-game error
-		if(this.statusCode != 200){
+		if(this.statusCode !== 200){
+			// Do not trigger a catbomb box if server responds following:
+			if(this.statusCode === 307){
+				// Should be safe to ignore by checking if new location is game official host.
+				// But the new location header value is `/kcsapi/...`, no host in it.
+				// Known issue: for some browsers, next redirected request might lose some headers,
+				// and cause post data can not be parsed as `x-www-form-urlencoded` properly,
+				// see #parsePostDataTextIfNecessary.
+				console.warn("Response temporary redirect:", this.statusCode, this.url, this.headers, this.params);
+				return false;
+			}
+			console.warn("Response status invalid:", this.statusCode, this.url, this.headers);
 			KC3Network.trigger("CatBomb", {
-				title: "Server Communication Error",
-				message: "["+this.call+"] failed to communicate with the server. It is not a matter of API link, but somewhat on your connectivity or environment"
+				title: KC3Meta.term("CatBombServerCommErrorTitle"),
+				message: KC3Meta.term("CatBombServerCommErrorMsg").format([this.call])
 			});
 			return false;
 		}
 		
-		// Reformat headers
-		var reformatted = {};
+		// Reformat headers array to name-value object
+		var headersReformatted = {};
 		$.each(this.headers, function(index, element){
-			reformatted[ element.name ] = element.value;
+			headersReformatted[ element.name ] = element.value;
 		});
-		this.headers = reformatted;
+		this.headers = headersReformatted;
 		
-		reformatted = {};
+		// Reformat and decode parameters
+		var paramsReformatted = {};
+		var paramsDecoded = {};
 		$.each(this.params, function(index, element){
-			reformatted[ decodeURI(element.name) ] = element.value;
+			var paramName = decodeURI(element.name);
+			paramsReformatted[ paramName ] = element.value;
+			paramsDecoded[ paramName ] = decodeURIComponent(element.value || "");
 		});
-		this.params = reformatted;
+		this.params = paramsReformatted;
+		this.paramsDecoded = paramsDecoded;
 		
 		return true;
 	};
@@ -53,16 +100,29 @@ Executes processing and relies on KC3Network for the triggers
 	/* READ RESPONSE
 	
 	------------------------------------------*/
-	KC3Request.prototype.readResponse = function( request, callback ){
+	KC3Request.prototype.readResponse = function(har, callback){
 		var self = this;
 		// Get response body
-		request.getContent(function( responseBody ){
-			// Strip svdata= from response body if exists then parse JSON
-			if(responseBody.indexOf("svdata=") >- 1){ responseBody = responseBody.substring(7); }
-			responseBody = JSON.parse(responseBody);
-			
-			self.gameStatus = responseBody.api_result;
-			self.response = responseBody;
+		har.getContent(function(responseBody){
+			if(typeof responseBody === "string"){
+				try {
+					// Strip `svdata=` from response body if exists then parse JSON
+					var json = responseBody.replace(/[\s\S]*svdata=/, "");
+					self.response = JSON.parse(json);
+					self.gameStatus = self.response.api_result;
+				} catch (e) {
+					// Keep this.response untouched, should be {}
+					self.gameStatus = 0;
+					console.warn("Parsing game response:", e, responseBody, self.call, self.params);
+				}
+			} else {
+				self.gameStatus = 0;
+				console.warn("Unexpected response body:", responseBody, self.call, self.params);
+				// seems Chromium m74 has introduced some bug causing null value for unknown reason
+				if(har.response && har.response.content){
+					console.warn("Actual response content:", har.response.bodySize, har.response.content);
+				}
+			}
 			
 			callback();
 		});
@@ -74,35 +134,45 @@ Executes processing and relies on KC3Network for the triggers
 	KC3Request.prototype.validateData = function(){
 		// If gameStatus is not 1. Game API returns 1 if complete success
 		if(this.gameStatus != 1){
+			console.warn("Game Status Error:", this.gameStatus, this.call, this.response);
+			
+			// Error 201
+			if (parseInt(this.gameStatus, 10) === 201) {
+				KC3Network.trigger("Bomb201", {
+					title: KC3Meta.term("Bomb201Title"),
+					message: KC3Meta.term("Bomb201Message")
+				});
+				return false;
+			}
 			
 			// If it fails on "api_start2" which is the first API call
-			if(this.call == "api_start2"){
+			if(this.call.indexOf("api_start2") > -1){
 				KC3Network.trigger( "CatBomb", {
-					title: "Hard API Error",
-					message: "The server responded with an error for your API calls. You might be using an expired API link, or it's probably maintenance! You may want to <a href=\"http://kancolle.wikia.com/wiki/Recent_Updates#Future_updates\" target=\"_blank\">check the wikia for notices</a>, or refresh your API link."
+					title: KC3Meta.term("CatBombHardAPIErrorTitle"),
+					message: KC3Meta.term("CatBombHardAPIErrorMsg")
 				});
 				return false;
 			}
 			
 			// If it fails on "api_port" which is usually caused by system clock
-			if(this.call == "api_port/port"){
+			if(this.call == "api_port/port" && !!this.gameStatus){
 				// Check if user's clock is correct
-				var ComputerClock = new Date().getTime();
-				var ServerClock = new Date( app.Util.findParam(this.headers, "Date") ).getTime();
+				var computerClock = new Date().getTime();
+				var serverClock = new Date( this.headers.Date ).getTime();
 				
 				// If clock difference is greater than 5 minutes
-				var timeDiff = Math.abs(ComputerClock - ServerClock);
+				var timeDiff = Math.abs(computerClock - serverClock);
 				if(timeDiff > 300000){
 					KC3Network.trigger("CatBomb", {
-						title: "Wrong Computer Clock!",
-						message: "Please correct your computer clock. You do not need to be on Japan timezone, but it needs to be the correct local time for your local timezone! Your clock is off by "+Math.ceil(timeDiff/60000)+" minutes."
+						title: KC3Meta.term("CatBombWrongComputerClockTitle"),
+						message: KC3Meta.term("CatBombWrongComputerClockMsg").format(Math.ceil(timeDiff/60000))
 					});
-					
+				
 				// Something else other than clock is wrong
-				}else{
+				} else {
 					KC3Network.trigger("CatBomb", {
-						title: "Error when entering Home Port screen",
-						message: "Please reload the game."
+						title: KC3Meta.term("CatBombErrorOnHomePortTitle"),
+						message: KC3Meta.term("CatBombErrorOnHomePortMsg")
 					});
 				}
 				return false;
@@ -110,11 +180,24 @@ Executes processing and relies on KC3Network for the triggers
 			
 			// Some other API Call failed
 			KC3Network.trigger("CatBomb", {
-				title: "API Data Error",
-				message: "The most recent action completed the network communication with server but returned an error. Check if it's now maintenance, or if your API link is still working."
+				title: KC3Meta.term("CatBombAPIDataErrorTitle"),
+				message: KC3Meta.term("CatBombAPIDataErrorMsg")
 			});
 			
 			return false;
+		} else {
+			// Check availability of the headers.Date
+			if(!this.headers.Date) {
+				if(!KC3Request.headerReminder) {
+					KC3Network.trigger("CatBomb", {
+						title: KC3Meta.term("CatBombMissingServerTimeTitle"),
+						message: KC3Meta.term("CatBombMissingServerTimeMsg")
+					});
+					KC3Request.headerReminder = true;
+				}
+				// Fallback to use local machine time
+				this.headers.Date = new Date().toUTCString();
+			}
 		}
 		return true;
 	};
@@ -123,17 +206,35 @@ Executes processing and relies on KC3Network for the triggers
 	
 	------------------------------------------*/
 	KC3Request.prototype.process = function(){
-		// check clock and clear quests at 5AM JST
-		var serverJstTime = new Date( this.headers.Date ).getTime();
-		KC3QuestManager.checkAndResetQuests(serverJstTime);
-		
 		// If API call is supported
-		if(typeof Kcsapi[this.call] != "undefined"){
+		if(typeof Kcsapi[this.call] === "function"){
+			// check clock and clear quests at 5AM JST
+			var serverTime = Date.safeToUtcTime( this.headers.Date );
+			KC3QuestManager.checkAndResetQuests(serverTime);
+			
 			// Execute by passing data
 			try {
-				Kcsapi[this.call]( this.params, this.response, this.headers );
+				Kcsapi[this.call]( this.params, this.response, this.headers, this.paramsDecoded );
 			} catch (e) {
-				throw e;
+				var reportParams = $.extend({}, this.params);
+				// Protect player's privacy
+				delete reportParams.api_token;
+				KC3Network.trigger("APIError", {
+					title: KC3Meta.term("APIErrorNoticeTitle"),
+					message: KC3Meta.term("APIErrorNoticeMessage").format([this.call]),
+					stack: e.stack || String(e),
+					request: {
+						url: this.url,
+						headers: this.headers,
+						statusCode: this.statusCode
+					},
+					params: reportParams,
+					response: this.response,
+					serverUtc: serverTime,
+					kc3Manifest: chrome.runtime.getManifest()
+				});
+				// Keep stack logging in extension's console
+				console.error("Game API Call Error:", e);/*RemoveLogging:skip*/
 			}
 		}
 	};

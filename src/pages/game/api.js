@@ -1,16 +1,37 @@
 _gaq.push(['_trackPageview']);
 
 // If awaiting activation
-var waiting = false;
+var waiting = true;
 
 // If trusted exit, for exit confirmation
 var trustedExit = false;
+
+// Used to fade out subtitles after calculated duration
+var subtitleTimer = false;
+var subtitleVanishBaseMillis;
+var subtitleVanishExtraMillisPerChar;
+var subtitleHourlyTimer = false;
+var subtitleHourlyShip = 0;
+
+// Holder object for audio files to test mp3 duration
+var subtitleMp3;
 
 // If auto-focus on window to capture key events or not
 var autoFocus = 0;
 
 // Critical Animation
 var critAnim = false;
+var taihaStatus = false;
+
+// Screenshot status
+var isTakingScreenshot = false;
+var suspendedTaiha = false;
+
+// Overlay avoids cursor
+var subtitlePosition = "bottom";
+
+// Overlay for map markers
+var markersOverlayTimer = false;
 
 // Idle time check
 /*
@@ -22,7 +43,7 @@ var critAnim = false;
 */
 localStorage.longestIdleTime = Math.max(localStorage.longestIdleTime || 0,1800000);
 var
-	lastRequestMark,
+	lastRequestMark = Date.now(),
 	idleTimer,
 	idleTimeout,
 	idleFunction;
@@ -30,7 +51,7 @@ var
 // Show game screens
 function ActivateGame(){
 	waiting = false;
-	$(".box-wrap").css("background", "#fff");
+	var scale = (ConfigManager.api_gameScale || 100) / 100;
 	$(".box-wait").hide();
 	$(".game-swf").remove();
 	$(".box-game")
@@ -38,21 +59,49 @@ function ActivateGame(){
 		.find(".game-swf")
 		.attr("src", localStorage.absoluteswf)
 		.end()
-		.trigger('initialize-idle')
 		.show();
-	$(".box-wrap").css("zoom", ((ConfigManager.api_gameScale || 100) / 100));
+	$(".box-wrap").css({
+		"background": "#fff",
+		"width": 1200,
+		"zoom": scale,
+		"margin-top": ConfigManager.api_margin
+	});
+	/*
+	var gamebox = $(".box-game").offset(), wrapper = $(".box-wrap").offset();
+	$(".box-game").css({
+		"margin-left": -gamebox.left + wrapper.left,
+		"margin-top": -gamebox.top + wrapper.top,
+	});
+	*/
+	idleTimer = setInterval(idleFunction, 1000);
+	if(ConfigManager.alert_idle_counter) {
+		$(".game-idle-timer").trigger("refresh-tick");
+	}
+	return true;
 }
 
 $(document).on("ready", function(){
 	// Initialize data managers
 	ConfigManager.load();
+	KC3Master.init();
+	RemodelDb.init();
 	KC3Meta.init("../../../../data/");
+	KC3Meta.loadQuotes();
 	KC3QuestManager.load();
 	KC3Database.init();
 	KC3Translation.execute();
 	
+	// User css customizations
+	if(ConfigManager.dmm_custom_css !== ""){
+		var customCSS = document.createElement("style");
+		customCSS.type = "text/css";
+		customCSS.id = "dmm_custom_css";
+		customCSS.innerHTML = ConfigManager.dmm_custom_css;
+		$("head").append(customCSS);
+	}
+	
 	// Apply interface configs
-	$(".box-wrap").css("margin-top", ConfigManager.api_margin+"px");
+	//$(".box-wrap").css("margin-top", ConfigManager.api_margin+"px");
 	if(ConfigManager.api_bg_image === ""){
 		$("body").css("background", ConfigManager.api_bg_color);
 	}else{
@@ -63,38 +112,69 @@ $(document).on("ready", function(){
 		$("body").css("background-repeat", "no-repeat");
 	}
 	
-	$(".box-wait .api_txt").attr("title",KC3Meta.term("APIConcealExpl")).on('change','textarea',function(){
+	if(ConfigManager.api_subtitles){
+		$(".overlay_subtitles").css("font-family", ConfigManager.subtitle_font);
+		$(".overlay_subtitles").css("font-size", ConfigManager.subtitle_size);
+		if(ConfigManager.subtitle_bold){
+			$(".overlay_subtitles").css("font-weight", "bold");
+		}
+		
+		const scale = (ConfigManager.api_gameScale || 100) / 100;
+		switch (ConfigManager.subtitle_display) {
+			case "bottom":
+				$(".overlay_subtitles span").css("pointer-events", "none");
+				break;
+			case "below":
+				$(".overlay_subtitles").prependTo(".out-of-box");
+				$(".overlay_subtitles").css({
+					position: "relative",
+					margin: "5px auto 0px",
+					left: "auto",
+					top: "auto",
+					bottom: "auto",
+					right: "auto",
+					width: $(".box-game").width(),
+					zoom: scale
+				});
+				break;
+			case "stick":
+				$(".overlay_subtitles").prependTo(".out-of-box");
+				$(".overlay_subtitles").css({
+					position: "fixed",
+					left: "50%",
+					top: "auto",
+					bottom: ConfigManager.alert_idle_counter > 1 ? "40px" : "3px",
+					right: "auto",
+					margin: "0px 0px 0px "+(-($(".box-game").width()/2))+"px",
+					width: $(".box-game").width(),
+					zoom: scale
+				});
+				break;
+			default: break;
+		}
+	}
+	
+	if(!(localStorage.absoluteswf || false)) {
+		$(".box-nolink").show();
+	}else{
+		$(".box-wait .api_txt textarea").val(localStorage.absoluteswf);
+		$(".box-wait").show();
+	}
+	
+	$(".box-wait .api_txt").attr("title",KC3Meta.term("APIConcealExpl"));
+	
+	$(".box-wait .api_txt").on('change', 'textarea', function(){
 		if(($(this).val().length > 0) || confirm("APIDataManualClear")) {
 			localStorage.absoluteswf = $(this).val();
 		} else {
 			$(this).val(localStorage.absoluteswf);
 		}
-		if(localStorage.absoluteswf.length <= 0)
-			location.reload();
 	});
-	
-	$(".box-game").on('initialize-idle',function(){
-		lastRequestMark = Date.now();
-		idleTimer = setInterval(idleFunction,1000);
-		if(ConfigManager.alert_idle_counter) {
-			$(".game-idle-timer").trigger("refresh-tick");
-		}
-	});
-	
-	// API link determines which screen to show
-	if(localStorage.absoluteswf){
-		$(".api_txt textarea").text(localStorage.absoluteswf);
-		$(".box-wait").show();
-		waiting = true;
-	}else{
-		$(".box-nolink").show();
-	}
 	
 	// Update API Link
 	$(".api_submit").on('click', function(){
 		if($(".api_text").val().indexOf("mainD2.swf") > -1){
 			localStorage.absoluteswf = $(".api_text").val();
-			trustedExit = true;
 			window.location.reload();
 		}
 	});
@@ -102,42 +182,63 @@ $(document).on("ready", function(){
 	// Forget API Link
 	$(".forget_btn").on('click', function(){
 		localStorage.absoluteswf = "";
-		trustedExit = true;
 		window.location.reload();
 	});
 	
 	// Quick Play
 	$(".play_btn").on('click', function(){
 		ActivateGame();
-		// ResetIdleStat();
 	});
 	
 	// Disable Quick Play (must panel)
 	if(ConfigManager.api_mustPanel) {
 		$(".play_btn")
-			.off('click')
+			.off("click")
+			.attr("disabled", "disabled")
 			.text(KC3Meta.term("APIWaitToggle"))
-			.css('color','#f00')
-			.css('width','40%');
+			.css("color", "#777")
+			.css('width', "40%");
 	}
 	
-	// Configure Refresh Toggle (using $(".game-refresh").trigger("click") is possible)
-	$(".game-refresh").on("click",function(){
-		switch($(this).text()) {
-			case("00"):
-			case("01"):
-				// TODO: BOMB EXPLODED
-				// $(".game-swf").attr("src","about:blank").attr("src",localStorage.absoluteswf);
-				$(".box-game").trigger('initialize-idle');
-				$(this).trigger('bomb-exploded');
-				$(this).text("05");
-				break;
-			default:
-				$(this).text(Math.max(0,$(this).text()-1).toDigits(2));
-				break;
+	// Listen ConfigManager changed
+	window.addEventListener("storage", function({key, timeStamp, url}){
+		if(key === ConfigManager.keyName()) {
+			ConfigManager.load();
+			if($("#dmm_custom_css").html() !== ConfigManager.dmm_custom_css){
+				$("#dmm_custom_css").html(ConfigManager.dmm_custom_css);
+			}
 		}
-	}).on("bomb-exploded",function(){
-		console.error("TODO: dragonjet help me >_<)/");
+	});
+	
+	// Untranslated quest copy-able text form
+	$(".overlay_quests").on("click", ".no_tl", function(){
+		chrome.tabs.create({
+			url: "https://translate.google.com/#ja/"+ConfigManager.language+"/"
+				+encodeURIComponent($(this).data("qtitle"))
+				+"%0A%0A"
+				+encodeURIComponent($(this).data("qdesc"))
+		});
+	});
+	
+	// Overlay avoids cursor
+	$(".overlay_subtitles span").on("mouseover", function(){
+		switch (ConfigManager.subtitle_display) {
+			case "evade":
+				if (subtitlePosition == "bottom") {
+					$(".overlay_subtitles").css("bottom", "");
+					$(".overlay_subtitles").css("top", "5px");
+					subtitlePosition = "top";
+				} else {
+					$(".overlay_subtitles").css("top", "");
+					$(".overlay_subtitles").css("bottom", "5px");
+					subtitlePosition = "bottom";
+				}
+				break;
+			case "ghost":
+				$(".overlay_subtitles").addClass("ghost");
+				break;
+			default: break;
+		}
 	});
 	
 	// Configure Idle Timer
@@ -157,29 +258,31 @@ $(document).on("ready", function(){
 	idleFunction = function(){
 		if(ConfigManager.alert_idle_counter) {
 			$(".game-idle-timer").text(String(Math.floor((Date.now() - lastRequestMark) / 1000)).toHHMMSS());
+			// Show Idle Counter
+			if(ConfigManager.alert_idle_counter > 1) {
+				$(".game-idle-timer").show();
+			} else {
+				$(".game-idle-timer").hide();
+			}
 		} else {
 			$(".game-idle-timer").text(String(NaN).toHHMMSS());
+			$(".game-idle-timer").hide();
 			clearInterval(idleTimer);
 		}
 	};
 	
-	// Enable Refresh Toggle
-	if(ConfigManager.api_directRefresh) {
-		$(".game-refresh").css("display","flex");
-	}
-	// Show Idle Counter
-	if(ConfigManager.alert_idle_counter > 1) {
-		$(".game-idle-timer").show();
-	}
-	
-	
 	// Exit confirmation
 	window.onbeforeunload = function(){
-		ConfigManager.load();
 		// added waiting condition should be ignored
-		if(ConfigManager.api_askExit==1 && !trustedExit && !waiting && !localStorage.getObject("extract_api")){
+		if(
+			ConfigManager.api_askExit==1 &&
+			!trustedExit &&
+			!waiting
+		){
 			trustedExit = true;
 			setTimeout(function(){ trustedExit = false; }, 100);
+			// Not support custom message any more, see:
+			// https://bugs.chromium.org/p/chromium/issues/detail?id=587940
 			return KC3Meta.term("UnwantedExit");
 		}
 	};
@@ -194,7 +297,6 @@ $(document).on("ready", function(){
 			autoFocus--;
 		}
 	}, 1000);
-	
 });
 
 $(document).on("keydown", function(event){
@@ -206,7 +308,14 @@ $(document).on("keydown", function(event){
 			
 		// F9: Screenshot
 		case(120):
-			(new KCScreenshot()).start("Auto", $(".box-wrap"));
+			if (isTakingScreenshot) return;
+			isTakingScreenshot = true;
+			
+			(new KCScreenshot())
+				.setCallback(function(){
+					isTakingScreenshot = false;
+				})
+				.start("Auto", $(".box-wrap"));
 			return false;
 		
 		// F10: Clear overlays
@@ -220,15 +329,15 @@ $(document).on("keydown", function(event){
 	}
 });
 
-/* Invokable actions
+
+/* Invoke-able actions
 -----------------------------------*/
 var interactions = {
 	
 	// Panel is opened, activate the game
 	activateGame :function(request, sender, response){
 		if(waiting){
-			ActivateGame();
-			response({success:true});
+			response({success:ActivateGame()});
 		}else{
 			response({success:false});
 		}
@@ -237,7 +346,7 @@ var interactions = {
 	// Cat Bomb Detection -> Enforced
 	catBomb :function(request, sender, response){
 		try{
-			switch(ConfigManager.api_directRefresh) {
+			switch(Number(ConfigManager.api_directRefresh)) {
 				case 0:
 					throw new Error("");
 				case 1:
@@ -250,7 +359,7 @@ var interactions = {
 			}
 			return true;
 		}catch(e){
-			console.error(e);
+			console.error("CatBomb exception", e);
 		}finally{
 			return false;
 		}
@@ -268,24 +377,20 @@ var interactions = {
 		} else {
 			clearInterval(idleTimer);
 			clearTimeout(idleTimeout);
-			$(".game-idle-timer").trigger("unsafe-tick").html([
-				String(Math.floor((Date.now() - lastRequestMark)/1000)).toHHMMSS(),
-				[request.tcp_status,request.api_status,request.api_result].filter(function(x){return !!x;}).join('/')
-			].join('<br>')).css("height","40px").css("width","480px");
-			interactions.catBomb(request,sender,response);
-			interactions.goodResponses = function(){};
+			$(".game-idle-timer").trigger("unsafe-tick");
+			console.info("API Link cease to be functional anymore after idle time", String(Math.floor((Date.now() - lastRequestMark)/1000)).toHHMMSS());
 		}
 	},
 	
 	// Quest page is opened, show overlays
 	questOverlay :function(request, sender, response){
-		//Only skip overlay generation if neither of the overlay features is enabled.
+		// Only skip overlay generation if neither of the overlay features is enabled.
 		if(!ConfigManager.api_translation && !ConfigManager.api_tracking){ response({success:false}); return true; }
 		
 		KC3QuestManager.load();
 		$.each(request.questlist, function( index, QuestRaw ){
 			// console.log("showing quest",QuestRaw);
-			if( QuestRaw !=- 1 ){
+			if( QuestRaw !=- 1 && index < 5 ){
 				var QuestBox = $("#factory .ol_quest_exist").clone().appendTo(".overlay_quests");
 				
 				// Get quest data
@@ -303,16 +408,22 @@ var interactions = {
 					
 					if(ConfigManager.api_tracking){
 						$(".tracking", QuestBox).html( QuestData.outputHtml() );
+						if(QuestData.tracking && QuestData.tracking.length > 1){
+							$(".tracking", QuestBox).addClass("small");
+						}
 					}else{
 						$(".tracking", QuestBox).hide();
 					}
-					
-					// Special Bw1 case multiple requirements
-					if( QuestRaw.api_no == 214 ){
-						$(".tracking", QuestBox).addClass("small");
-					}
 				}else{
-					QuestBox.css({ visibility: "hidden" });
+					if(ConfigManager.google_translate) {
+						$(".with_tl", QuestBox).css({ visibility: "hidden" });
+						$(".no_tl", QuestBox).data("qid", QuestRaw.api_no);
+						$(".no_tl", QuestBox).data("qtitle", QuestRaw.api_title);
+						$(".no_tl", QuestBox).data("qdesc", QuestRaw.api_detail);
+						$(".no_tl", QuestBox).show();
+					} else {
+						QuestBox.css({ visibility: "hidden" });
+					}
 				}
 			}
 		});
@@ -321,7 +432,6 @@ var interactions = {
 	
 	// Quest Progress Notification
 	questProgress :function(request, sender, response){
-		
 		response({success:true});
 	},
 	
@@ -331,63 +441,339 @@ var interactions = {
 		response({success:true});
 	},
 	
+	// Show map markers for old worlds (node letters & icons)
+	markersOverlay :function(request, sender, response){
+		if(!ConfigManager.map_markers && !ConfigManager.map_letters){
+			response({success:false}); return true;
+		}
+		var sortieStartDelayMillis = 2800;
+		var markersShowMillis = 5000;
+		var compassLeastShowMillis = 3500;
+		if(markersOverlayTimer){
+			// Keep showing if last ones not disappear yet
+			clearTimeout(markersOverlayTimer);
+			$(".overlay_markers").show();
+		} else {
+			var letters = KC3Meta.nodeLetters(request.worldId, request.mapId);
+			var lettersFound = (!!letters && Object.keys(letters).length > 0);
+			var icons = KC3Meta.nodeMarkers(request.worldId, request.mapId);
+			var iconsFound = (!!icons.length && icons.length > 0);
+			$(".overlay_markers").hide().empty();
+			if(lettersFound && ConfigManager.map_letters){
+				// Show node letters
+				for(let l in letters){
+					var letterDiv = $('<div class="letter"></div>').text(l)
+						.css("left", letters[l][0] + "px")
+						.css("top", letters[l][1] + "px");
+					if(l.length > 1) letterDiv.css("font-size", 34 - 6 * l.length);
+					$(".overlay_markers").append(letterDiv);
+				}
+			}
+			if(iconsFound && ConfigManager.map_markers){
+				// Show some icon style markers
+				for(let i in icons){
+					var obj = icons[i];
+					var iconImg = $('<img />')
+						.attr("src", chrome.runtime.getURL("assets/img/" + obj.img))
+						.attr("width", obj.size[0])
+						.attr("height", obj.size[1]);
+					var iconDiv = $('<div class="icon"></div>')
+						.css("left", obj.pos[0] + "px")
+						.css("top", obj.pos[1] + "px")
+						.append(iconImg);
+					$(".overlay_markers").append(iconDiv);
+				}
+			}
+			if(request.needsDelay){
+				// Delay to show on start of sortie
+				setTimeout(function(){
+					$(".overlay_markers").fadeIn(1000);
+				}, sortieStartDelayMillis);
+			} else {
+				$(".overlay_markers").fadeIn(1000);
+			}
+			markersOverlayTimer = true;
+		}
+		if(markersOverlayTimer){
+			markersOverlayTimer = setTimeout(function(){
+				$(".overlay_markers").fadeOut(2000);
+				markersOverlayTimer = false;
+			}, markersShowMillis
+				+ (request.compassShow ? compassLeastShowMillis : 0)
+				+ (request.needsDelay ? sortieStartDelayMillis : 0)
+			);
+		}
+		response({success:true});
+	},
+	
 	// Remove HTML overlays
 	clearOverlays :function(request, sender, response){
-		console.log("clearing overlays");
+		// console.log("clearing overlays");
 		// app.Dom.clearOverlays();
-		$(".overlay_quests").html("");
+		$(".overlay_quests").empty();
+		$(".overlay_markers").empty();
 		$(".overlay_record").hide();
 		response({success:true});
 	},
 	
 	// Screenshot triggered, capture the visible tab
 	screenshot :function(request, sender, response){
+		if (isTakingScreenshot) return;
+		isTakingScreenshot = true;
+		
 		// ~Please rewrite the screenshot script
-		(new KCScreenshot()).start(request.playerName, $(".box-wrap"));
-		response({success:true});
+		(new KCScreenshot())
+			.setCallback(function(){
+				response({success:true});
+				isTakingScreenshot = false;
+			})
+			.start(request.playerName, $(".box-wrap"));
+		return true;
 	},
 	
 	// Fit screen
 	fitScreen :function(request, sender, response){
-		var GameScale = ((ConfigManager.api_gameScale || 100) / 100);
+		var gameScale = (ConfigManager.api_gameScale || 100) / 100;
+		var topMargin = Math.ceil((ConfigManager.api_margin || 0) * gameScale);
 		
 		// Get browser zoon level for the page
-		chrome.tabs.getZoom(null, function(ZoomFactor){
+		chrome.tabs.getZoom(null, function(zoomFactor){
 			// Resize the window
 			chrome.windows.getCurrent(function(wind){
 				chrome.windows.update(wind.id, {
-					width: Math.ceil(800*GameScale*ZoomFactor) + (wind.width- Math.ceil($(window).width()*ZoomFactor) ),
-					height: Math.ceil(480*GameScale*ZoomFactor) + (wind.height- Math.ceil($(window).height()*ZoomFactor) )
+					width: Math.ceil(1200 * gameScale * zoomFactor) + (wind.width  - Math.ceil($(window).width()  * zoomFactor)),
+					height: Math.ceil(720 * gameScale * zoomFactor) + (wind.height - Math.ceil($(window).height() * zoomFactor)) + topMargin
 				});
 			});
 		});
 	},
 	
 	// Taiha Alert Start
-	taihaAlertStart :function(request, sender, response){
-		$(".box-wrap").addClass("critical");
+	taihaAlertStart :function(request, sender, response, callback){
+		taihaStatus = true;
 		
-		if(critAnim){ clearInterval(critAnim); }
-		critAnim = setInterval(function() {
-			$(".taiha_red").toggleClass("anim2");
-		}, 500);
+		if(ConfigManager.alert_taiha_blur) {
+			$(".box-wrap").addClass("critical");
+		}
 		
-		$(".taiha_blood").show();
-		$(".taiha_red").show();
+		if(ConfigManager.alert_taiha_blood) {
+			if(critAnim){ clearInterval(critAnim); }
+			if(!ConfigManager.alert_taiha_noanim){
+				critAnim = setInterval(function() {
+					$(".taiha_red").toggleClass("anim2");
+				}, 500);
+			}
+			$(".taiha_blood").show(0, function(){
+				$(".taiha_red").show(0, function(){
+					(callback || function(){})();
+				});
+			});
+		}
 	},
 	
 	// Taiha Alert Stop
-	taihaAlertStop :function(request, sender, response){
+	taihaAlertStop :function(request, sender, response, callback){
+		taihaStatus = false;
 		$(".box-wrap").removeClass("critical");
 		if(critAnim){ clearInterval(critAnim); }
-		$(".taiha_blood").hide();
-		$(".taiha_red").hide();
+		$(".taiha_blood").hide(0, function(){
+			$(".taiha_red").hide(0, function(){
+				(callback || function(){})();
+			});
+		});
 	},
 	
-	// Dummy action
-	dummy :function(request, sender, response){
+	// Suspend Taiha Alert for taking screenshot
+	suspendTaiha :function(callback){
+		var self = this;
 		
+		if (!taihaStatus && !suspendedTaiha) {
+			(callback || function(){})();
+			return false;
+		}
+		
+		if (suspendedTaiha) {
+			clearTimeout(suspendedTaiha);
+			(callback || function(){})();
+		} else {
+			this.taihaAlertStop({}, {}, {}, function(){
+				setTimeout(function(){
+					(callback || function(){})();
+				}, 10);
+			});
+		}
+		
+		suspendedTaiha = setTimeout(function(){
+			self.taihaAlertStart({}, {}, {});
+			suspendedTaiha = false;
+		}, 2000);
+	},
+	
+	// Show subtitles
+	subtitle :function(request, sender, response){
+		if(!ConfigManager.api_subtitles) return true;
+		
+		// Get subtitle text
+		var subtitleText = false;
+		var quoteIdentifier = "";
+		var quoteVoiceNum = request.voiceNum;
+		var quoteVoiceSize = request.voiceSize;
+		var quoteVoiceDuration = request.duration;
+		var quoteSpeaker = "";
+		switch(request.voicetype){
+			case "titlecall":
+				quoteIdentifier = "titlecall_"+request.filename;
+				break;
+			case "npc":
+				quoteIdentifier = "npc";
+				break;
+			case "event":
+				quoteIdentifier = "event";
+				break;
+			case "abyssal":
+				quoteIdentifier = "abyssal";
+				if(ConfigManager.subtitle_speaker){
+					const abyssalId = KC3Meta.getAbyssalIdByFilename(quoteVoiceNum);
+					quoteSpeaker = KC3Meta.abyssShipName(abyssalId);
+				}
+				break;
+			default:
+				quoteIdentifier = request.shipID;
+				if(ConfigManager.subtitle_speaker){
+					quoteSpeaker = KC3Meta.shipName(KC3Master.ship(quoteIdentifier).api_name);
+				}
+				break;
+		}
+		//console.debug("looking up quote:", quoteIdentifier, quoteVoiceNum, quoteVoiceSize);
+		subtitleText = KC3Meta.quote( quoteIdentifier, quoteVoiceNum, quoteVoiceSize );
+		
+		// Lazy init timing parameters
+		if(!subtitleVanishBaseMillis){
+			subtitleVanishBaseMillis = Number(KC3Meta.quote("timing", "baseMillisVoiceLine")) || 2000;
+		}
+		if(!subtitleVanishExtraMillisPerChar){
+			subtitleVanishExtraMillisPerChar = Number(KC3Meta.quote("timing", "extraMillisPerChar")) || 50;
+		}
+		
+		const hideSubtitle = () => {
+			// hide first to fading will stop
+			$(".overlay_subtitles").stop(true, true);
+			$(".overlay_subtitles").hide();
+			// If subtitle removal timer is ongoing, reset
+			if(subtitleTimer){
+				if(Array.isArray(subtitleTimer))
+					subtitleTimer.forEach(clearTimeout);
+				else
+					clearTimeout(subtitleTimer);
+			}
+		};
+		
+		// Display subtitle and set its removal timer
+		const showSubtitle = (subtitleText, quoteIdentifier) => {
+			if($.type(subtitleText) === "string") {
+				showSubtitleLine(subtitleText, quoteIdentifier);
+				const millis = quoteVoiceDuration || (subtitleVanishBaseMillis +
+					subtitleVanishExtraMillisPerChar * $(".overlay_subtitles").text().length);
+				subtitleTimer = setTimeout(fadeSubtitlesOut, millis);
+				return;
+			}
+			subtitleTimer = [];
+			let lastLineOutMillis = 0;
+			$.each(subtitleText, (delay, text) => {
+				const delays = String(delay).split(',');
+				const millis = Number(delays[0]);
+				lastLineOutMillis = delays.length > 1 ? Number(delays[1]) :
+					(millis + subtitleVanishBaseMillis + subtitleVanishExtraMillisPerChar * text.length);
+				subtitleTimer.push(setTimeout(() => {
+					showSubtitleLine(text, quoteIdentifier);
+				}, millis));
+			});
+			subtitleTimer.push(setTimeout(fadeSubtitlesOut, lastLineOutMillis));
+		};
+		
+		const fadeSubtitlesOut = () => {
+			subtitleTimer = false;
+			$(".overlay_subtitles").fadeOut(1000, function(){
+				switch (ConfigManager.subtitle_display) {
+					case "evade":
+						$(".overlay_subtitles").css("top", "");
+						$(".overlay_subtitles").css("bottom", "5px");
+						subtitlePosition = "bottom";
+						break;
+					case "ghost":
+						$(".overlay_subtitles").removeClass("ghost");
+						break;
+					default: break;
+				}
+			});
+		};
+		
+		const showSubtitleLine = (subtitleText, quoteIdentifier) => {
+			$(".overlay_subtitles span").html(subtitleText);
+			if(!!quoteSpeaker){
+				$(".overlay_subtitles span").html("{0}: {1}".format(quoteSpeaker, subtitleText));
+			}
+			$(".overlay_subtitles").toggleClass("abyssal", quoteIdentifier === "abyssal");
+			$(".overlay_subtitles").show();
+		};
+		
+		const cancelHourlyLine = () => {
+			if(subtitleHourlyTimer) clearTimeout(subtitleHourlyTimer);
+			subtitleHourlyTimer = false;
+			subtitleHourlyShip = 0;
+		};
+		
+		const bookHourlyLine = (text, shipId) => {
+			cancelHourlyLine();
+			const nextHour = new Date().shiftHour(1).resetTime(["Minutes", "Seconds", "Milliseconds"]).getTime();
+			//const nextHour = new Date().resetTime(["Milliseconds"]).getTime() + 5000;
+			const diffMillis = nextHour - Date.now();
+			// Do not book on unexpected diff time: passed or > 59 minutes
+			if(diffMillis <= 0 || diffMillis > 59 * 60000) {
+				showSubtitle(text, shipId);
+			} else {
+				subtitleHourlyShip = shipId;
+				subtitleHourlyTimer = setTimeout(function(){
+					// Should cancel booked hourly line for some conditions
+					if(subtitleHourlyShip == shipId
+						// if Chrome delays timer execution > 3 seconds
+						&& Math.abs(Date.now() - nextHour) < 3000
+						// TODO && at home port && secretary unchanged
+					){
+						hideSubtitle();
+						showSubtitle(text, shipId);
+					}
+					cancelHourlyLine();
+				}, diffMillis);
+				//console.debug("hourly booked after:", diffMillis, shipId, text);
+			}
+		};
+		
+		// If subtitles available for the voice
+		if(subtitleText){
+			hideSubtitle();
+			// Book for a future display if it's a ship's hourly voice,
+			// because game preload voice file in advance (about > 5 mins, even ~24 mins).
+			if(!isNaN(Number(quoteIdentifier)) && KC3Meta.isHourlyVoiceNum(quoteVoiceNum)){
+				if(ConfigManager.subtitle_hourly){
+					bookHourlyLine(subtitleText, quoteIdentifier);
+				}
+			} else {
+				showSubtitle(subtitleText, quoteIdentifier);
+			}
+		}
+	},
+	
+	// Live reloading meta data
+	reloadMeta :function(request, sender, response){
+		if(request.metaType === "Quotes") {
+			KC3Meta.loadQuotes();
+		} else if(request.metaType === "Quests") {
+			KC3Meta.reloadQuests();
+		}
+		console.info(request.metaType, "reloaded");
 	}
+	
 };
 
 /* Listen to messaging triggers

@@ -1,12 +1,20 @@
 module.exports = function(grunt) {
 
+	require('load-grunt-tasks')(grunt);
+
 	grunt.initConfig({
 		clean: {
 			tmp: {
 				src: [ 'build/tmp/**/*', 'build/tmp/' ]
 			},
+			battlePrediction: {
+				src: ['build/release/library/modules/BattlePrediction/']
+			},
 			release: {
 				src: [ 'build/release/**/*', 'build/release/' ]
+			},
+			testenv: {
+				src: [ 'build/testenv/**/*', 'build/testenv/' ]
 			}
 		},
 		copy: {
@@ -16,47 +24,97 @@ module.exports = function(grunt) {
 				src: '**/*',
 				dest: 'build/tmp/'
 			},
+			testenv: {
+				expand: true,
+				src: [
+					// some tests would load from the following 2 paths:
+					'node_modules/babel-polyfill/dist/polyfill.min.js',
+					'node_modules/qunitjs/**/*',
+					'node_modules/jquery/**/*',
+
+					'src/**/*',
+					'!src/data/lang/node_modules/**/*',
+					'tests/**/*'
+				],
+				dest: 'build/testenv/'
+			},
 			statics: {
 				expand: true,
 				cwd: 'build/tmp/',
 				src: [
 					'assets/img/**',
+					'!assets/img/payitems/**',
+					'!assets/img/shipseasonal/**',
+					'!assets/img/useitems_p2/**',
 					'assets/snd/**',
 					'assets/swf/**',
-					'assets/js/Chart.min.js',
-					'assets/js/Dexie.min.js',
-					'assets/js/FileSaver.min.js',
-					'assets/js/steganography.js',
-					'assets/js/jquery-ui.min.js',
-					'assets/js/KanColleHelpers.js',
-					'assets/js/twbsPagination.min.js'
+					'assets/js/*.js',
+					'!assets/js/jquery.min.js',
+					'!assets/js/KanColleHelpers.js'
 				],
 				dest: 'build/release/'
+			},
+			seasonal: {
+				expand: true,
+				cwd: 'build/tmp/assets/img/shipseasonal/',
+				src: '*.png',
+				dest: 'build/release/assets/img/shipseasonal/',
+				filter: function(file) {
+					var id = file.match(/^.*\/(\d+)(_.*)?.png$/);
+					if(!id || !id[1]) return false;
+					id = Number(id[1]);
+					var idArr = grunt.file.readJSON('src/data/seasonal_icons.json') || [];
+					return idArr.indexOf(id) > -1;
+				}
 			},
 			processed: {
 				expand: true,
 				cwd: 'build/tmp/',
 				src: [
-					'assets/css/keys.css',
+					'assets/css/**/*',
+					'!assets/css/bootstrap.css',
 					'library/helpers/*.js',
 					'library/injections/*.js',
-					'library/modules/*.js',
+					'library/injections/*.css',
+					'library/modules/**/*.js',
+					'library/workers/*.js',
 					'pages/**/*',
+					'!pages/devtools/themes/default/**',
 					'!pages/strategy/tabs/**/*.js',
+					'!pages/strategy/tabs/_tpl/**',
 					'manifest.json',
 					'data/*.json',
+					'data/*.nedb',
 					'data/lang/data/**/*.json'
 				],
 				dest: 'build/release/'
 			}
 		},
 		removelogging: {
-			'build/tmp': {
-				src: "build/tmp/**/*.js"
+			console: {
+				expand: true,
+				cwd: 'build/tmp',
+				src: [
+					'**/*.js',
+					'!data/lang/**',
+					'!assets/js/*',
+					'!library/helpers/KanColleHelpers.js',
+					'assets/js/global.js'
+				],
+				options: {
+					// keep all 'warn' and 'error' by default
+					methods: [
+						'log', 'info', 'assert', 'count', 'clear',
+						'group', 'groupEnd', 'groupCollapsed', 'trace',
+						'debug', 'dir', 'dirxml', 'profile', 'profileEnd',
+						'time', 'timeEnd', 'timeStamp', 'table', 'exception'
+					]
+				},
+				dest: 'build/tmp/'
 			}
 		},
 		jshint: {
-			all : {
+			build : {
 				options: {
 					jshintrc: true
 				},
@@ -64,6 +122,24 @@ module.exports = function(grunt) {
 					'build/tmp/assets/js/global.js',
 					'build/tmp/library/**/*.js',
 					'build/tmp/pages/**/*.js'
+				]
+			},
+			src : {
+				options: {
+					jshintrc: true
+				},
+				src: [
+					'src/assets/js/global.js',
+					'src/library/**/*.js',
+					'src/pages/**/*.js'
+				]
+			},
+			test : {
+				options: {
+					jshintrc: true
+				},
+				src: [
+					'tests/library/**/*.js',
 				]
 			}
 		},
@@ -83,6 +159,11 @@ module.exports = function(grunt) {
 		},
 		uglify: {
 			all : {
+				options: {
+					mangle: {
+						except: ['window', 'this']
+					}
+				},
 				files: [{
 					expand: true,
 					cwd: 'build/tmp/',
@@ -137,32 +218,114 @@ module.exports = function(grunt) {
 					]
 				}
 			},
-			manifest: {
-				src: 'build/tmp/manifest.json',
+			seasonalicons: {
+				src: 'build/tmp/data/seasonal_icons.json',
 				dest: 'build/tmp/',
 				options: {
 					replacements: [
 						{
-							pattern: /KC3改 Development/ig,
-							replacement: 'KanColle Command Center 改'
-						},
-						{
-							pattern: /assets\/js\/jquery\-2\.1\.3\.min\.js/ig,
-							replacement: 'assets/js/global.js'
-						},
-						{
-							pattern: /library\/objects\/Messengers\.js/ig,
-							replacement: 'library/objects.js'
-						},
-						{
-							pattern: /library\/managers\/ConfigManager\.js/ig,
-							replacement: 'library/managers.js'
-						},
-						{
-							pattern: /assets\/img\/logo\/dev\.png/ig,
-							replacement: 'assets/img/logo/19.png'
+							pattern: /^.*$/g,
+							replacement: '[]'
 						}
 					]
+				}
+			}
+		},
+		modify_json: {
+			manifest_info: {
+				options: {
+					fields: {
+						"name": "KanColle Command Center 改",
+						"browser_action": {
+							"default_icon": "assets/img/logo/19.png",
+							"default_popup": "pages/popup/popup.html"
+						}
+					}
+				},
+				files: {
+					'build/tmp/manifest.json': ['build/tmp/manifest.json'],
+				}
+			},
+			manifest_scripts: {
+				options: {
+					fields: {
+						"background": {
+							"scripts": [
+								"assets/js/global.js",
+								"assets/js/Dexie.min.js",
+								"library/objects.js",
+								"library/managers.js",
+								"library/modules/ChromeSync.js",
+								"library/modules/QuestSync/Sync.js",
+								"library/modules/QuestSync/Background.js",
+								"library/modules/Database.js",
+								"library/modules/Log/Log.js",
+								"library/modules/Log/Background.js",
+								"library/modules/ImageExport.js",
+								"library/modules/Master.js",
+								"library/modules/RemodelDb.js",
+								"library/modules/Meta.js",
+								"library/modules/Translation.js",
+								"library/modules/Service.js"
+							]
+						},
+						"content_scripts": [
+							{
+								"matches": ["*://*.dmm.com/*"],
+								"js": ["library/injections/cookie.js"],
+								"run_at": "document_end",
+								"all_frames": true
+							},
+							{
+								"matches": ["*://www.dmm.com/netgame/*/app_id=854854*"],
+								"css": [
+									"library/injections/dmm.css"
+								],
+								"js": [
+									"assets/js/global.js",
+									"library/objects.js",
+									"library/managers.js",
+									"library/modules/Log/Log.js",
+									"library/modules/Log/Messaging.js",
+									"library/modules/Log/ContentScript.js",
+									"library/modules/ChromeSync.js",
+									"library/modules/QuestSync/Sync.js",
+									"library/modules/QuestSync/ContentScript.js",
+									"library/modules/Master.js",
+									"library/modules/Meta.js",
+									"library/modules/RemodelDb.js",
+									"library/modules/Translation.js",
+									"library/injections/dmm_takeover.js",
+									"library/injections/dmm.js"
+								],
+								"run_at": "document_end",
+								"all_frames": true
+							},
+							{
+								"matches": ["*://osapi.dmm.com/gadgets/*aid=854854*"],
+								"js": [
+									"assets/js/global.js",
+									"library/objects.js",
+									"library/injections/osapi.js"
+								],
+								"run_at": "document_end",
+								"all_frames": true
+							},
+							{
+								"matches": ["*://*/kcs2/index.php?api_root=/kcsapi*"],
+								"js": [
+									"assets/js/global.js",
+									"library/objects.js",
+									"library/injections/kcs2.js"
+								],
+								"run_at": "document_end",
+								"all_frames": true
+							}
+						],
+					}
+				},
+				files: {
+					'build/tmp/manifest.json': ['build/tmp/manifest.json'],
 				}
 			}
 		},
@@ -181,14 +344,24 @@ module.exports = function(grunt) {
 			}
 		},
 		jsonlint: {
-			all : {
+			build : {
 				options: {
-
+					format: true
 				},
 				src: [
 					'build/tmp/manifest.json',
 					'build/tmp/data/*.json',
 					'build/tmp/data/lang/data/**/*.json'
+				]
+			},
+			src :{
+				options: {
+
+				},
+				src: [
+					'src/manifest.json',
+					'src/data/*.json',
+					'src/data/lang/data/**/*.json'
 				]
 			}
 		},
@@ -207,10 +380,24 @@ module.exports = function(grunt) {
 			},
 			global_js: {
 				src: [
-					'build/tmp/assets/js/jquery-2.1.3.min.js',
+					'build/tmp/assets/js/jquery.min.js',
 					'build/tmp/assets/js/global.js'
 				],
 				dest: 'build/release/assets/js/global.js'
+			},
+			battlePrediction: {
+				src: [
+					'build/tmp/library/modules/BattlePrediction/BattlePrediction.js',
+					'build/tmp/library/modules/BattlePrediction/**/*.js'
+				],
+				dest: 'build/release/library/modules/BattlePrediction.js',
+			},
+			battlePredictionDev: {
+				src: [
+					'src/library/modules/BattlePrediction/BattlePrediction.js',
+					'src/library/modules/BattlePrediction/**/*.js',
+				],
+				dest: 'src/library/modules/BattlePrediction.js',
 			},
 			library: {
 				files: {
@@ -222,10 +409,69 @@ module.exports = function(grunt) {
 				files: {
 					'build/release/pages/strategy/allstrategytabs.js' : ['build/tmp/pages/strategy/tabs/*/*.js'],
 				}
+			},
+		},
+		qunit: {
+			all: [
+				'build/testenv/tests/**/*.html'
+			]
+		},
+		compress: {
+			release: {
+				options: {
+					archive: 'build/release.zip',
+					pretty: true
+				},
+				expand: true,
+				cwd: 'build/release/',
+				src: [ '**/*' ],
+				dest: './'
+			}
+		},
+		webstore_upload: {
+			"accounts": {
+				"dragonjet": {
+					publish: true,
+					client_id: process.env.WEBSTORE_CLIENT_ID,
+					client_secret: process.env.WEBSTORE_CLIENT_SECRET,
+					refresh_token: process.env.WEBSTORE_REFRESH_TOKEN
+				}
+			},
+			"extensions": {
+				"kc3kai": {
+					account: "dragonjet",
+					publish: true,
+					appID: "hkgmldnainaglpjngpajnnjfhpdjkohh",
+					zip: "build/release.zip"
+				}
+			}
+		},
+		// currently use just for running tests
+		babel: {
+			options: {
+				sourceMap: true,
+				presets: ['babel-preset-es2015']
+			},
+			testenv: {
+				files: [
+					{  
+						expand: true,
+						cwd: 'build/testenv/',
+						// for now only transpile code in "library" & "pages" (whitelist)
+						// avoiding stepping into "assets" and "data".
+						// same reason for "tests/library".
+						src: [ "src/library/**/*.js",
+							   "src/pages/**/*.js",
+							   "tests/library/**/*.js",
+							   "tests/pages/**/*.js"
+							 ],
+						dest: 'build/testenv/'
+					}
+				]
 			}
 		}
 	});
-
+	
 	grunt.loadNpmTasks('grunt-contrib-jshint');
 	grunt.loadNpmTasks('grunt-contrib-concat');
 	grunt.loadNpmTasks('grunt-contrib-uglify');
@@ -237,27 +483,75 @@ module.exports = function(grunt) {
 	grunt.loadNpmTasks('grunt-jsonlint');
 	grunt.loadNpmTasks('grunt-string-replace');
 	grunt.loadNpmTasks("grunt-remove-logging");
-
-	grunt.registerTask('default', [
+	grunt.loadNpmTasks("grunt-contrib-qunit");
+	grunt.loadNpmTasks('grunt-contrib-compress');
+	grunt.loadNpmTasks('grunt-webstore-upload');
+	grunt.loadNpmTasks('grunt-modify-json');
+	
+	grunt.registerTask('local', [
+		'clean:tmp',
 		'clean:release',
 		'copy:tmpsrc',
 		'copy:statics',
-		'removelogging',
-		'string-replace:devtooltitle',
-		'jshint',
+		'jshint:build',
 		'cssmin',
-		'uglify',
 		'string-replace:allhtml',
 		'htmlmin',
-		'string-replace:manifest',
-		'jsonlint',
+		'modify_json:manifest_scripts',
+		'jsonlint:build',
 		'json-minify',
 		'copy:processed',
 		'concat:global_css',
 		'concat:global_js',
+		'concat:battlePrediction',
 		'concat:library',
 		'concat:strategy',
-		'clean:tmp'
+		'clean:tmp',
+		'clean:battlePrediction',
 	]);
-
+	
+	grunt.registerTask('build', [
+		'clean:tmp',
+		'clean:release',
+		'copy:tmpsrc',
+		'copy:statics',
+		'copy:seasonal',
+		'removelogging',
+		'string-replace:devtooltitle',
+		'jshint:build',
+		'cssmin',
+		'uglify',
+		'string-replace:allhtml',
+		'htmlmin',
+		'modify_json:manifest_scripts',
+		'modify_json:manifest_info',
+		'jsonlint:build',
+		'json-minify',
+		'copy:processed',
+		'concat:global_css',
+		'concat:global_js',
+		'concat:battlePrediction',
+		'concat:library',
+		'concat:strategy',
+		'clean:battlePrediction'
+	]);
+	
+	grunt.registerTask('test-src', [
+		'jshint:src',
+		'jshint:test',
+		'jsonlint:src'
+	]);
+	
+	grunt.registerTask('test-unit', [
+		'clean:testenv',
+		'copy:testenv',
+		'babel:testenv',
+		'qunit'
+	]);
+	
+	grunt.registerTask('webstore', [
+		'compress:release',
+		'webstore_upload:kc3kai'
+	]);
+	
 };

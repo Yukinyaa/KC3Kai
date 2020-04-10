@@ -10,45 +10,20 @@
 	</head>
 	<body>
 		<div class="wrapper">
-			<div class="menu hover" id="play_cc">
-				<div class="icon"><img src="img/api.png" /></div>
-				<div class="text i18n">MenuPlayAPIName</div>
-				<!-- <div class="desc i18n">MenuPlayAPIDesc</div> -->
-				<div class="desc i18n">MenuRefreshAPIDesc</div>
-				<div class="clear"></div>
-			</div>
-			<!-- <div class="menu hover" id="get_api">
-				<div class="icon"><img src="img/refresh.png" /></div>
-				<div class="text i18n">MenuRefreshAPIName</div>
-				<div class="desc i18n">MenuRefreshAPIDesc</div>
-				<div class="clear"></div>
-			</div> -->
 			<div class="menu hover" id="play_dmm">
-				<div class="icon"><img src="img/dmm.png" /></div>
-				<div class="text i18n">MenuPlayDMMName</div>
-				<div class="desc i18n">MenuPlayDMMDesc</div>
+				<div class="icon"><img src="../../assets/img/ui/menu/kancolle.png" /></div>
+				<div class="text i18n">MenuKancolleName</div>
+				<div class="desc i18n">MenuKancolleDesc</div>
 				<div class="clear"></div>
 			</div>
-			<div class="menu hover" id="play_dmmf">
-				<div class="icon"><img src="img/dmmf.png" /></div>
-				<div class="text i18n">MenuPlayDMMFName</div>
-				<div class="desc i18n">MenuPlayDMMFDesc</div>
-				<div class="clear"></div>
-			</div>
-			<!-- <div class="menu hover" id="play_osapi">
-				<div class="icon"><img src="img/dmm.png" /></div>
-				<div class="text i18n">MenuPlayOSAPIName</div>
-				<div class="desc i18n">MenuPlayOSAPIDesc</div>
-				<div class="clear"></div>
-			</div> -->
 			<div class="menu hover" id="strategy">
-				<div class="icon"><img src="img/strategy.png" /></div>
+				<div class="icon"><img src="../../assets/img/ui/menu/strategy.png" /></div>
 				<div class="text i18n">MenuStrategyName</div>
 				<div class="desc i18n">MenuStrategyDesc</div>
 				<div class="clear"></div>
 			</div>
 			<div class="menu hover" id="settings">
-				<div class="icon"><img src="img/settings.png" /></div>
+				<div class="icon"><img src="../../assets/img/ui/menu/settings.png" /></div>
 				<div class="text i18n">SettingsTitle</div>
 				<div class="desc i18n">MenuSettingsDesc</div>
 				<div class="clear"></div>
@@ -59,26 +34,15 @@
 				<div class="desc i18n">MenuAboutDesc</div>
 				<div class="clear"></div>
 			</div>
-			<!-- <div class="menu hover" id="facebook">
-				<div class="icon"><img src="../../assets/img/social/fb.png" /></div>
-				<div class="text i18n">MenuFBName</div>
-				<div class="desc i18n">MenuFBDesc</div>
-				<div class="clear"></div>
-			</div> -->
-			<!-- <div class="footFb hover" id="facebook">
-				<div class="icon"><img src="../../assets/img/social/fb.png" /></div>
-				<div class="text i18n">Like us on Facebook!</div>
-				<div class="clear"></div>
-			</div> -->
 			
 			<div class="footData">
 				<span class="i18n">MenuVersion</span> :
-				<span class="resetTime myVersion">0.0</span>
-				<a href="https://github.com/KC3Kai/KC3Kai/wiki/Changelogs" target="_blank" class="changelog i18n">MenuChangelog</a>
+				<span class="resetTime myVersion">0.0.0</span>
+				<a href="../update/update.html" target="kc3_update_page" class="changelog i18n">MenuChangelog</a>
 			</div>
 			<div class="footData">
 				<span class="i18n">MenuUpdate</span> :
-				<span class="updateTime nextVersion i18n"></span>
+				<span class="updateTime nextVersion"></span>
 			</div>
 			<div class="footData">
 				<span class="i18n">MenuPvPReset</span> :
@@ -88,13 +52,22 @@
 				<span class="i18n">MenuQuestReset</span> :
 				<span class="resetTime timeQuest">00:00:00</span>
 			</div>
+			<div class="footData">
+				<span class="i18n">MenuServerMaintenance</span> :
+				<span class="resetTime timeServerMaintenance"></span>
+			</div>
+			<div class="footData">
+				<span class="i18n">MenuGameVersion</span> :
+				<span class="resetTime gameVersion"></span>
+			</div>
 		</div>
 		
+		<script type="text/javascript" src="../../assets/js/no_ga.js"></script>
 		<script type="text/javascript" src="../../assets/js/global.js"></script>
 		<!-- @buildimportjs ../../library/objects.js -->
 		<!-- @buildimportjs ../../library/managers.js -->
 		<!-- @nonbuildstart -->
-		<script type="text/javascript" src="../../assets/js/jquery-2.1.3.min.js"></script>
+		<script type="text/javascript" src="../../assets/js/jquery.min.js"></script>
 		<script type="text/javascript" src="../../library/objects/Messengers.js"></script>
 		<script type="text/javascript" src="../../library/managers/ConfigManager.js"></script>
 		<!-- @nonbuildend -->
